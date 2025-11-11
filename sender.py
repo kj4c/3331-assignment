@@ -42,13 +42,13 @@ class URPSegment:
             flags = 0b100  # FIN bit
         # DATA has flags = 0
         
-        # Pack: sequence number (H = unsigned short, big-endian)
-        header = struct.pack('>H', seq_num)
-        # Pack flags byte: reserved (13 bits = 0) + flags (3 bits)
-        header += struct.pack('B', flags)
-        # Pack checksum (H = unsigned short, big-endian)
-        header += struct.pack('>H', checksum)
-        
+        # # Pack: sequence number (H = unsigned short, big-endian)
+        # header = struct.pack('>H', seq_num)
+        # # Pack flags byte: reserved (13 bits = 0) + flags (3 bits)
+        # header += struct.pack('B', flags)
+        # # Pack checksum (H = unsigned short, big-endian)
+        # header += struct.pack('>H', checksum)
+        header = struct.pack('>HBBH', seq_num, 0, flags, checksum)
         return header
     
     @staticmethod
@@ -57,17 +57,17 @@ class URPSegment:
         if len(header) < HEADER_SIZE:
             return None
         
-        seq_num = struct.unpack('>H', header[0:2])[0]
-        flags_byte = header[2]
-        checksum = struct.unpack('>H', header[4:6])[0]
+        try:
+            seq_num, _, flags_byte, checksum = struct.unpack('>HBBH', header[:HEADER_SIZE])
+        except struct.error:
+            return None
         
-        flags = flags_byte & 0b111
         seg_type = SEG_DATA
-        if flags & 0b001:  # ACK
+        if flags_byte & 0b001:  # ACK
             seg_type = SEG_ACK
-        elif flags & 0b010:  # SYN
+        elif flags_byte & 0b010:  # SYN
             seg_type = SEG_SYN
-        elif flags & 0b100:  # FIN
+        elif flags_byte & 0b100:  # FIN
             seg_type = SEG_FIN
         
         return {
@@ -210,7 +210,7 @@ class Sender:
         self.receiver_port = int(receiver_port)
         self.txt_file = txt_file
         self.max_win = int(max_win)
-        self.rto = int(rto) / 1000.0  # Convert to seconds
+        self.rto = int(rto)  # RTO in seconds
         
         # Initialize PLC
         self.log_file = 'sender_log.txt'
@@ -586,8 +586,8 @@ def main():
     
     sender = Sender(sender_port, receiver_port, txt_file, max_win, rto, flp, rlp, fcp, rcp)
     try:
+        print("starting sender")
         sender.run()
-    except KeyboardInterrupt:
         sender.running = False
     except Exception as e:
         print(f"Connection reset: {e}")

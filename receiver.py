@@ -36,9 +36,7 @@ class URPSegment:
         elif seg_type == SEG_FIN:
             flags = 0b100
         
-        header = struct.pack('>H', seq_num)
-        header += struct.pack('B', flags)
-        header += struct.pack('>H', checksum)
+        header = struct.pack('>HBBH', seq_num, 0, flags, checksum)
         
         return header
     
@@ -48,17 +46,17 @@ class URPSegment:
         if len(header) < HEADER_SIZE:
             return None
         
-        seq_num = struct.unpack('>H', header[0:2])[0]
-        flags_byte = header[2]
-        checksum = struct.unpack('>H', header[4:6])[0]
+        try:
+            seq_num, _, flags_byte, checksum = struct.unpack('>HBBH', header[:HEADER_SIZE])
+        except struct.error:
+            return None
         
-        flags = flags_byte & 0b111
         seg_type = SEG_DATA
-        if flags & 0b001:
+        if flags_byte & 0b001:  # ACK
             seg_type = SEG_ACK
-        elif flags & 0b010:
+        elif flags_byte & 0b010:  # SYN
             seg_type = SEG_SYN
-        elif flags & 0b100:
+        elif flags_byte & 0b100:  # FIN
             seg_type = SEG_FIN
         
         return {
@@ -124,6 +122,7 @@ class Receiver:
         
         # Socket
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self.sock.settimeout(1.0)  # Set timeout to allow KeyboardInterrupt to be caught
         self.sock.bind(('127.0.0.1', self.receiver_port))
         
         # Protocol state
@@ -154,6 +153,7 @@ class Receiver:
         self.received_seqs = set()
         
         # Running flag
+        print("starting receiver")
         self.running = True
     
     def log(self, direction, status, time_ms, seg_type, seq_num, payload_len):
@@ -353,6 +353,9 @@ class Receiver:
                     self.log('rcv', 'ok', time_ms, 'FIN', seq_num, 0)
                     self._handle_fin(seq_num)
                 
+            except socket.timeout:
+                # Timeout occurred, check if we should continue running
+                continue
             except Exception as e:
                 if self.running:
                     print(f"Connection reset: {e}")
