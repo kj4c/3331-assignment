@@ -10,12 +10,12 @@ import time
 import threading
 import sys
 
-# Constants
+# constants
 HEADER_SIZE = 6
 MAX_SEQ = 65536  # 2^16
-MSL = 1.0  # Maximum Segment Lifetime in seconds
+MSL = 1.0  # maximum segment lifetime in seconds
 
-# Segment types
+# segment types
 SEG_DATA = 0
 SEG_ACK = 1
 SEG_SYN = 2
@@ -52,11 +52,11 @@ class URPSegment:
             return None
         
         seg_type = SEG_DATA
-        if flags_byte & 0b001:  # ACK
+        if flags_byte & 0b001:  # ack
             seg_type = SEG_ACK
-        elif flags_byte & 0b010:  # SYN
+        elif flags_byte & 0b010:  # syn
             seg_type = SEG_SYN
-        elif flags_byte & 0b100:  # FIN
+        elif flags_byte & 0b100:  # fin
             seg_type = SEG_FIN
         
         return {
@@ -67,26 +67,19 @@ class URPSegment:
     
     @staticmethod
     def calculate_checksum(segment):
-        """Calculate 16-bit checksum"""
+        """Calculate 16-bit ones' complement checksum."""
         if len(segment) < HEADER_SIZE:
             return 0
         
-        # Create segment with checksum field set to 0
-        segment_without_checksum = segment[:4] + b'\x00\x00' + segment[6:]
+        data = bytearray(segment)
+        data[4:6] = b'\x00\x00'
         
-        total = 0
-        for i in range(0, len(segment_without_checksum), 2):
-            if i + 1 < len(segment_without_checksum):
-                word = (segment_without_checksum[i] << 8) + segment_without_checksum[i + 1]
-            else:
-                word = (segment_without_checksum[i] << 8)
-            total += word
-        
-        while total >> 16:
-            total = (total & 0xFFFF) + (total >> 16)
+        total = sum(int.from_bytes(data[i:i + 2], 'big') for i in range(0, len(data), 2))
+        total = (total & 0xFFFF) + (total >> 16)
+        total = (total & 0xFFFF) + (total >> 16)
         
         checksum = (~total) & 0xFFFF
-        return checksum if checksum != 0 else 0xFFFF
+        return checksum or 0xFFFF
     
     @staticmethod
     def create_segment(seq_num, seg_type, data=b''):
@@ -116,30 +109,30 @@ class Receiver:
         self.txt_file = txt_file
         self.max_win = int(max_win)
         
-        # Log file
+        # log file
         self.log_file = 'receiver_log.txt'
         open(self.log_file, 'w').close()
         
-        # Socket
+        # socket
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        self.sock.settimeout(1.0)  # Set timeout to allow KeyboardInterrupt to be caught
+        self.sock.settimeout(1.0) # todo: remove later
         self.sock.bind(('127.0.0.1', self.receiver_port))
         
-        # Protocol state
+        # begin state
         self.state = 'LISTEN'
-        self.expected_seq = None  # Next expected byte
+        self.expected_seq = None  # next expected byte
         self.isn = None
         
-        # Receive buffer: seq_num -> data
+        # receive buffer: seq_num -> data
         self.receive_buffer = {}
         
-        # File handle
+        # file handle
         self.file_handle = None
         
-        # Timing
+        # timing
         self.start_time = None
         
-        # Statistics
+        # statistics
         self.original_data_received = 0
         self.total_data_received = 0
         self.original_segments_received = 0
@@ -149,10 +142,9 @@ class Receiver:
         self.total_acks_sent = 0
         self.duplicate_acks_sent = 0
         
-        # Track received sequence numbers for duplicates
+        # track received sequence numbers for duplicates
         self.received_seqs = set()
         
-        # Running flag
         print("starting receiver")
         self.running = True
     
@@ -162,7 +154,7 @@ class Receiver:
         with open(self.log_file, 'a') as f:
             f.write(f"{direction} {status} {time_ms:.2f} {seg_type_str} {seq_num} {payload_len}\n")
     
-    def _send_ack(self, ack_num):
+    def send_ack(self, ack_num):
         """Send ACK segment"""
         ack_segment = URPSegment.create_segment(ack_num, SEG_ACK)
         self.sock.sendto(ack_segment, ('127.0.0.1', self.sender_port))
@@ -171,40 +163,42 @@ class Receiver:
         self.log('snd', 'ok', time_ms, 'ACK', ack_num, 0)
         self.total_acks_sent += 1
     
-    def _write_in_order_data(self):
+    def write_in_order_data(self):
         """Write all in-order data from buffer to file"""
         if self.file_handle is None:
             self.file_handle = open(self.txt_file, 'wb')
         
-        # Write data in order
+        # write data in order
         while self.expected_seq in self.receive_buffer:
             data = self.receive_buffer.pop(self.expected_seq)
             self.file_handle.write(data)
             
-            # Update expected sequence number
+            # update expected sequence number
             self.expected_seq = (self.expected_seq + len(data)) % MAX_SEQ
     
-    def _handle_syn(self, seq_num):
+    def handle_syn(self, seq_num):
         """Handle SYN segment"""
         if self.state == 'LISTEN':
-            # First SYN received
+            # first SYN received
             self.isn = seq_num
             self.expected_seq = (seq_num + 1) % MAX_SEQ
+
+            # swap to ESTABLISHED state and send ack back.
             self.state = 'ESTABLISHED'
-            self._send_ack(self.expected_seq)
+            self.send_ack(self.expected_seq)
         elif self.state == 'ESTABLISHED':
-            # Duplicate SYN
-            self._send_ack(self.expected_seq)
+            # duplicate SYN
+            self.send_ack(self.expected_seq)
             self.duplicate_acks_sent += 1
     
-    def _handle_data(self, seq_num, data):
+    def handle_data(self, seq_num, data):
         """Handle DATA segment"""
         if self.state != 'ESTABLISHED':
             return
         
         payload_len = len(data)
         
-        # Check if duplicate
+        # check if duplicate
         is_duplicate = seq_num in self.received_seqs
         
         if not is_duplicate:
@@ -214,20 +208,20 @@ class Receiver:
             self.received_seqs.add(seq_num)
         else:
             self.duplicate_segments_received += 1
-            # Count duplicate data only if it's within the receive window
+            # count duplicate data only if it's within the receive window
             # (i.e., we haven't written it yet or it's buffered)
             window_start = self.expected_seq
             window_end_seq = (self.expected_seq + self.max_win) % MAX_SEQ
             
             in_window = False
-            if window_end_seq < window_start:  # Wrapped around
+            if window_end_seq < window_start:  # wrapped around
                 if seq_num >= window_start or seq_num < window_end_seq:
                     in_window = True
             else:
                 if seq_num >= window_start and seq_num < window_end_seq:
                     in_window = True
             
-            # Also check if it's in the buffer
+            # also check if it's in the buffer
             if seq_num in self.receive_buffer:
                 in_window = True
             
@@ -236,27 +230,27 @@ class Receiver:
         
         self.total_segments_received += 1
         
-        # Check if in order
+        # check if in order
         if seq_num == self.expected_seq:
-            # In order - write immediately (if not duplicate)
+            # in order - write immediately (if not duplicate)
             if not is_duplicate:
                 if self.file_handle is None:
                     self.file_handle = open(self.txt_file, 'wb')
                 self.file_handle.write(data)
                 self.expected_seq = (self.expected_seq + payload_len) % MAX_SEQ
                 
-                # Write any buffered in-order data
-                self._write_in_order_data()
+                # write any buffered in-order data
+                self.write_in_order_data()
         else:
-            # Out of order - buffer if within window and not duplicate
+            # out of order - buffer if within window and not duplicate
             if not is_duplicate:
-                # Check if sequence number is within receive window
+                # check if sequence number is within receive window
                 window_start = self.expected_seq
                 window_end_seq = (self.expected_seq + self.max_win) % MAX_SEQ
                 
-                # Handle wrap-around: check if seq_num is between expected_seq and expected_seq + max_win
+                # handle wrap-around: check if seq_num is between expected_seq and expected_seq + max_win
                 in_window = False
-                if window_end_seq < window_start:  # Wrapped around
+                if window_end_seq < window_start:  # wrapped around
                     if seq_num >= window_start or seq_num < window_end_seq:
                         in_window = True
                 else:
@@ -267,51 +261,50 @@ class Receiver:
                     if seq_num not in self.receive_buffer:
                         self.receive_buffer[seq_num] = data
         
-        # Send ACK (cumulative)
-        self._send_ack(self.expected_seq)
+        # send ack (cumulative)
+        self.send_ack(self.expected_seq)
         
-        # Check if duplicate ACK
+        # check if duplicate ack
         if is_duplicate:
             self.duplicate_acks_sent += 1
     
-    def _handle_fin(self, seq_num):
+    def handle_fin(self, seq_num):
         """Handle FIN segment"""
         if self.state == 'ESTABLISHED':
-            # Write any remaining buffered data
-            self._write_in_order_data()
+            self.write_in_order_data()
             
-            # Close file
+            # close file
             if self.file_handle:
                 self.file_handle.close()
                 self.file_handle = None
             
-            # Send ACK
+            # send ack
             expected_after_fin = (seq_num + 1) % MAX_SEQ
-            self._send_ack(expected_after_fin)
+            self.send_ack(expected_after_fin)
             
-            # Move to TIME_WAIT
+            # move to time_wait
             self.state = 'TIME_WAIT'
             
-            # Start timer thread for TIME_WAIT
-            timer_thread = threading.Thread(target=self._time_wait_timer, daemon=True)
+            # start timer thread for time_wait
+            timer_thread = threading.Thread(target=self.time_wait_timer, daemon=True)
             timer_thread.start()
         elif self.state == 'TIME_WAIT':
-            # Duplicate FIN - resend ACK
+            # duplicate fin - resend ack
             expected_after_fin = (seq_num + 1) % MAX_SEQ
-            self._send_ack(expected_after_fin)
+            self.send_ack(expected_after_fin)
             self.duplicate_acks_sent += 1
     
-    def _time_wait_timer(self):
+    def time_wait_timer(self):
         """Timer for TIME_WAIT state (2 * MSL)"""
         time.sleep(2 * MSL)
         if self.state == 'TIME_WAIT':
             self.state = 'CLOSED'
             self.running = False
-            self._write_statistics()
+            self.write_statistics()
     
     def run(self):
         """Main receiver logic"""
-        # Wait for first segment (SYN)
+        # wait for first segment (syn)
         while self.running:
             try:
                 data, addr = self.sock.recvfrom(65535)
@@ -321,19 +314,19 @@ class Receiver:
                 
                 time_ms = (time.time() - self.start_time) * 1000
                 
-                # Verify checksum
+                # verify checksum
                 if not URPSegment.verify_checksum(data):
                     self.corrupted_segments_discarded += 1
                     self.total_segments_received += 1
                     
-                    # Log corrupted segment (try to parse for logging)
+                    # log corrupted segment (try to parse for logging)
                     header_info = URPSegment.parse_header(data)
                     if header_info:
                         seg_type_str = ['DATA', 'ACK', 'SYN', 'FIN'][header_info['seg_type']]
                         self.log('rcv', 'cor', time_ms, seg_type_str, header_info['seq_num'], 0)
                     continue
                 
-                # Parse header
+                # parse header
                 header_info = URPSegment.parse_header(data)
                 if header_info is None:
                     continue
@@ -342,19 +335,19 @@ class Receiver:
                 seg_type = header_info['seg_type']
                 payload = data[HEADER_SIZE:]
                 
-                # Handle segment based on type
+                # handle segment based on type
                 if seg_type == SEG_SYN:
                     self.log('rcv', 'ok', time_ms, 'SYN', seq_num, 0)
-                    self._handle_syn(seq_num)
+                    self.handle_syn(seq_num)
                 elif seg_type == SEG_DATA:
                     self.log('rcv', 'ok', time_ms, 'DATA', seq_num, len(payload))
-                    self._handle_data(seq_num, payload)
+                    self.handle_data(seq_num, payload)
                 elif seg_type == SEG_FIN:
                     self.log('rcv', 'ok', time_ms, 'FIN', seq_num, 0)
-                    self._handle_fin(seq_num)
+                    self.handle_fin(seq_num)
                 
             except socket.timeout:
-                # Timeout occurred, check if we should continue running
+                # timeout occurred, check if we should continue running
                 continue
             except Exception as e:
                 if self.running:
@@ -362,7 +355,7 @@ class Receiver:
                     self.running = False
                     break
     
-    def _write_statistics(self):
+    def write_statistics(self):
         """Write statistics to log file"""
         with open(self.log_file, 'a') as f:
             f.write(f"\nOriginal data received: {self.original_data_received}\n")

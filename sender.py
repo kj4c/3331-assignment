@@ -13,13 +13,13 @@ import threading
 import sys
 import os
 
-# Constants
-MSS = 1000  # Maximum Segment Size (payload only)
+# constants
+MSS = 1000
 HEADER_SIZE = 6
-MAX_SEQ = 65536  # 2^16
-MSL = 1.0  # Maximum Segment Lifetime in seconds
+MAX_SEQ = 65536 # is 2^16
+MSL = 1.0
 
-# Segment types
+# segment types
 SEG_DATA = 0
 SEG_ACK = 1
 SEG_SYN = 2
@@ -31,23 +31,17 @@ class URPSegment:
     @staticmethod
     def create_header(seq_num, seg_type, checksum=0):
         """Create URP segment header (6 bytes)"""
-        # Sequence number (16 bits)
-        # Reserved (13 bits) + Control bits (3 bits)
+        # sequence number (16 bits)
+        # reserved (13 bits) + control bits (3 bits)
         flags = 0
         if seg_type == SEG_ACK:
-            flags = 0b001  # ACK bit
+            flags = 0b001  # ack bit
         elif seg_type == SEG_SYN:
-            flags = 0b010  # SYN bit
+            flags = 0b010  # syn bit
         elif seg_type == SEG_FIN:
-            flags = 0b100  # FIN bit
-        # DATA has flags = 0
-        
-        # # Pack: sequence number (H = unsigned short, big-endian)
-        # header = struct.pack('>H', seq_num)
-        # # Pack flags byte: reserved (13 bits = 0) + flags (3 bits)
-        # header += struct.pack('B', flags)
-        # # Pack checksum (H = unsigned short, big-endian)
-        # header += struct.pack('>H', checksum)
+            flags = 0b100  # fin bit
+        # data has flags = 0
+     
         header = struct.pack('>HBBH', seq_num, 0, flags, checksum)
         return header
     
@@ -63,11 +57,11 @@ class URPSegment:
             return None
         
         seg_type = SEG_DATA
-        if flags_byte & 0b001:  # ACK
+        if flags_byte & 0b001:  # ack
             seg_type = SEG_ACK
-        elif flags_byte & 0b010:  # SYN
+        elif flags_byte & 0b010:  # syn
             seg_type = SEG_SYN
-        elif flags_byte & 0b100:  # FIN
+        elif flags_byte & 0b100:  # fin
             seg_type = SEG_FIN
         
         return {
@@ -78,30 +72,19 @@ class URPSegment:
     
     @staticmethod
     def calculate_checksum(segment):
-        """Calculate 16-bit checksum (ones' complement sum)"""
+        """Calculate 16-bit ones' complement checksum."""
         if len(segment) < HEADER_SIZE:
             return 0
         
-        # Create segment with checksum field set to 0
-        segment_without_checksum = segment[:4] + b'\x00\x00' + segment[6:]
+        data = bytearray(segment)
+        data[4:6] = b'\x00\x00'
         
-        # Calculate ones' complement sum
-        total = 0
-        # Process 16-bit words
-        for i in range(0, len(segment_without_checksum), 2):
-            if i + 1 < len(segment_without_checksum):
-                word = (segment_without_checksum[i] << 8) + segment_without_checksum[i + 1]
-            else:
-                word = (segment_without_checksum[i] << 8)
-            total += word
+        total = sum(int.from_bytes(data[i:i + 2], 'big') for i in range(0, len(data), 2))
+        total = (total & 0xFFFF) + (total >> 16)
+        total = (total & 0xFFFF) + (total >> 16)
         
-        # Add carry bits
-        while total >> 16:
-            total = (total & 0xFFFF) + (total >> 16)
-        
-        # Ones' complement
         checksum = (~total) & 0xFFFF
-        return checksum if checksum != 0 else 0xFFFF
+        return checksum or 0xFFFF
     
     @staticmethod
     def create_segment(seq_num, seg_type, data=b''):
@@ -109,7 +92,7 @@ class URPSegment:
         header = URPSegment.create_header(seq_num, seg_type, 0)
         segment = header + data
         checksum = URPSegment.calculate_checksum(segment)
-        # Replace checksum in header
+        # replace checksum in header
         segment = header[:4] + struct.pack('>H', checksum) + data
         return segment
     
@@ -127,13 +110,13 @@ class PLC:
     """Packet Loss and Corruption module"""
     
     def __init__(self, flp, rlp, fcp, rcp, log_file):
-        self.flp = flp  # Forward loss probability
-        self.rlp = rlp  # Reverse loss probability
-        self.fcp = fcp  # Forward corruption probability
-        self.rcp = rcp  # Reverse corruption probability
+        self.flp = flp  
+        self.rlp = rlp
+        self.fcp = fcp
+        self.rcp = rcp
         self.log_file = log_file
         
-        # Statistics
+        # statistics
         self.forward_dropped = 0
         self.forward_corrupted = 0
         self.reverse_dropped = 0
@@ -141,18 +124,18 @@ class PLC:
     
     def process_outgoing(self, segment, seg_type, seq_num, payload_len, start_time):
         """Process outgoing segment (forward direction)"""
-        # Check for drop
+        # check for drop
         if random.random() < self.flp:
             self.forward_dropped += 1
             self.log('snd', 'drp', time.time() - start_time, seg_type, seq_num, payload_len)
             return None
         
-        # Check for corruption
+        # check for corruption
         corrupted = False
         if random.random() < self.fcp:
             corrupted = True
             self.forward_corrupted += 1
-            # Corrupt: flip a bit in a random byte (excluding first 4 header bytes)
+            # flip a bit in a random byte (excluding first 4 header bytes)
             if len(segment) > 4:
                 byte_idx = random.randint(4, len(segment) - 1)
                 bit_idx = random.randint(0, 7)
@@ -161,11 +144,13 @@ class PLC:
         
         status = 'cor' if corrupted else 'ok'
         self.log('snd', status, time.time() - start_time, seg_type, seq_num, payload_len)
+        
+        # send possible corrupted segment
         return segment
     
     def process_incoming(self, segment, start_time):
         """Process incoming segment (reverse direction)"""
-        # Parse header to get info for logging
+        # parse header to get info for logging
         header_info = URPSegment.parse_header(segment)
         if header_info is None:
             return None
@@ -173,18 +158,18 @@ class PLC:
         seg_type_str = ['DATA', 'ACK', 'SYN', 'FIN'][header_info['seg_type']]
         seq_num = header_info['seq_num']
         
-        # Check for drop
+        # check for drop
         if random.random() < self.rlp:
             self.reverse_dropped += 1
             self.log('rcv', 'drp', time.time() - start_time, seg_type_str, seq_num, 0)
             return None
         
-        # Check for corruption
+        # check for corruption
         corrupted = False
         if random.random() < self.rcp:
             corrupted = True
             self.reverse_corrupted += 1
-            # Corrupt: flip a bit in a random byte (excluding first 4 header bytes)
+            # corrupt: flip a bit in a random byte (excluding first 4 header bytes)
             if len(segment) > 4:
                 byte_idx = random.randint(4, len(segment) - 1)
                 bit_idx = random.randint(0, 7)
@@ -203,43 +188,66 @@ class PLC:
 
 
 class Sender:
-    """URP Sender implementation"""
+    """expects sender_port, receiver_port, txt_file_to_send, max_win, rto, flp, rlp, fcp, rcp"""
     
     def __init__(self, sender_port, receiver_port, txt_file, max_win, rto, flp, rlp, fcp, rcp):
         self.sender_port = int(sender_port)
         self.receiver_port = int(receiver_port)
         self.txt_file = txt_file
+
+        # max amount of data bytes can stransmit  >= 1000 bytes
+
+        if (int(max_win) < 1000):
+            print("max_win must be >= 1000 bytes")
+            sys.exit(1)
+
         self.max_win = int(max_win)
-        self.rto = int(rto)  # RTO in seconds
+
+        # in milliseconds
+        self.rto = int(rto)
         
-        # Initialize PLC
+        # initialize plc
         self.log_file = 'sender_log.txt'
-        # Clear log file
+        # clear log file
         open(self.log_file, 'w').close()
+
+        if (flp < 0 or flp > 1 or rlp < 0 or rlp > 1 or fcp < 0 or fcp > 1 or rcp < 0 or rcp > 1):
+            print("flp, rlp, fcp, rcp must be between 0 and 1")
+            sys.exit(1)
+
         self.plc = PLC(flp, rlp, fcp, rcp, self.log_file)
         
-        # Socket
+        # socket
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        self.sock.bind(('127.0.0.1', self.sender_port))
-        self.sock.settimeout(0.1)  # Small timeout for checking
         
-        # Protocol state
-        self.state = 'SYN_SENT'  # Start by sending SYN
+        # create socket and bind to sender port
+        self.sock.bind(('127.0.0.1', self.sender_port))
+        self.sock.settimeout(0.1)
+        
+        # protocol state
+        # beginning state should be syn_sent
+        self.state = 'SYN_SENT'
+
+        # generate a random initial sequence number
         self.isn = random.randint(0, MAX_SEQ - 1)
+
+        # right edge of the window
         self.next_seq = (self.isn + 1) % MAX_SEQ
-        self.base = self.isn + 1  # First unacknowledged byte
+
+        # left edge of the window
+        self.base = self.isn + 1
         self.file_pos = 0
         
-        # Buffers
+        # buffers
         self.unacked_segments = {}  # seq_num -> (segment, payload_len, is_retransmission)
         self.file_data = None
         
-        # Timer
+        # timer
         self.timer_running = False
         self.timer_lock = threading.Lock()
         self.timer_thread = None
         
-        # Statistics
+        # statistics
         self.original_data_sent = 0
         self.total_data_sent = 0
         self.original_segments_sent = 0
@@ -249,17 +257,17 @@ class Sender:
         self.duplicate_acks_received = 0
         self.corrupted_acks_discarded = 0
         
-        # Duplicate ACK tracking
+        # duplicate ack tracking
         self.last_ack = None
         self.dup_ack_count = 0
         
-        # Timing
+        # timing
         self.start_time = None
         
-        # File handling
+        # file handling
         self.file_handle = None
         
-        # Threading
+        # threading
         self.running = True
         self.receive_thread = None
     
@@ -269,7 +277,8 @@ class Sender:
             if not self.timer_running:
                 self.timer_running = True
                 if self.timer_thread is None or not self.timer_thread.is_alive():
-                    self.timer_thread = threading.Thread(target=self._timer_thread, daemon=True)
+                    # loops for rto milliseconds
+                    self.timer_thread = threading.Thread(target=self.timer_thread_loop, daemon=True)
                     self.timer_thread.start()
     
     def stop_timer(self):
@@ -277,42 +286,45 @@ class Sender:
         with self.timer_lock:
             self.timer_running = False
     
-    def _timer_thread(self):
+    def timer_thread_loop(self):
         """Timer thread function"""
         while self.running:
             if self.timer_running:
                 time.sleep(self.rto)
                 with self.timer_lock:
                     if self.timer_running and self.running:
-                        # Timeout occurred
-                        self._handle_timeout()
+                        # timeout occurred
+                        self.handle_timeout()
             else:
                 time.sleep(0.01)
     
-    def _handle_timeout(self):
-        """Handle timeout - retransmit oldest unacknowledged segment"""
+    def handle_timeout(self):
+        """Handle timeout from rto, retransmit the SYN or FIN"""
         if not self.unacked_segments:
             self.stop_timer()
             return
         
-        # Find oldest unacknowledged segment
+        # find oldest unacknowledged segment
         oldest_seq = min(self.unacked_segments.keys())
         segment, payload_len, _ = self.unacked_segments[oldest_seq]
         
-        # Retransmit
+        # retransmit
         seg_type = SEG_DATA
+        
+        # if the state is syn_sent, retransmit the SYN
         if self.state == 'SYN_SENT':
             seg_type = SEG_SYN
+        # if the state is fin_wait, retransmit the FIN
         elif self.state == 'FIN_WAIT':
             seg_type = SEG_FIN
         
-        self._send_segment(segment, seg_type, oldest_seq, payload_len, is_retransmission=True)
+        self.send_segment(segment, seg_type, oldest_seq, payload_len, is_retransmission=True)
         self.timeout_retransmissions += 1
         
-        # Restart timer
+        # restart timer
         self.start_timer()
     
-    def _send_segment(self, segment, seg_type, seq_num, payload_len, is_retransmission=False):
+    def send_segment(self, segment, seg_type, seq_num, payload_len, is_retransmission=False):
         """Send segment through PLC and socket"""
         if not is_retransmission:
             self.original_segments_sent += 1
@@ -325,39 +337,39 @@ class Sender:
         
         self.total_segments_sent += 1
         
-        # Process through PLC
+        # process through plc
         processed_segment = self.plc.process_outgoing(
             segment, seg_type, seq_num, payload_len, self.start_time
         )
         
         if processed_segment is not None:
-            # Send through socket
+            # send through socket
             self.sock.sendto(processed_segment, ('127.0.0.1', self.receiver_port))
     
-    def _receive_thread(self):
+    def receive_thread_func(self):
         """Thread to receive ACKs"""
         while self.running:
             try:
                 data, addr = self.sock.recvfrom(65535)
                 
-                # Process through PLC
+                # process through plc
                 processed_data = self.plc.process_incoming(data, self.start_time)
                 
                 if processed_data is None:
-                    continue  # Dropped by PLC
+                    continue
                 
-                # Verify checksum
+                # verify checksum
                 if not URPSegment.verify_checksum(processed_data):
                     self.corrupted_acks_discarded += 1
                     continue
                 
-                # Parse ACK
+                # parse ack
                 header_info = URPSegment.parse_header(processed_data)
                 if header_info is None or header_info['seg_type'] != SEG_ACK:
                     continue
                 
                 ack_num = header_info['seq_num']
-                self._handle_ack(ack_num)
+                self.handle_ack(ack_num)
                 
             except socket.timeout:
                 continue
@@ -365,66 +377,66 @@ class Sender:
                 if self.running:
                     print(f"Error receiving ACK: {e}")
     
-    def _seq_compare(self, seq1, seq2):
+    def seq_compare(self, seq1, seq2):
         """Compare sequence numbers accounting for wrap-around"""
-        # Return True if seq1 >= seq2
+        # return true if seq1 >= seq2
         diff = (seq1 - seq2) % MAX_SEQ
         return diff < MAX_SEQ // 2
     
-    def _handle_ack(self, ack_num):
+    def handle_ack(self, ack_num):
         """Handle received ACK"""
-        # Check if duplicate ACK
+        # check if duplicate ack
         if self.last_ack is not None and ack_num == self.last_ack:
             self.dup_ack_count += 1
             self.duplicate_acks_received += 1
             
-            # Fast retransmit on 3 duplicate ACKs
+            # fast retransmit on 3 duplicate acks
             if self.dup_ack_count == 3 and self.state == 'ESTABLISHED':
-                # Retransmit oldest unacknowledged DATA segment
                 if self.unacked_segments:
                     oldest_seq = min(self.unacked_segments.keys())
                     segment, payload_len, _ = self.unacked_segments[oldest_seq]
-                    self._send_segment(segment, SEG_DATA, oldest_seq, payload_len, is_retransmission=True)
+                    self.send_segment(segment, SEG_DATA, oldest_seq, payload_len, is_retransmission=True)
                     self.fast_retransmissions += 1
                     self.dup_ack_count = 0
                     self.start_timer()
             return
         
-        # New ACK - check if it advances the window
         is_new_ack = False
         if self.last_ack is None:
             is_new_ack = True
-        elif self._seq_compare(ack_num, self.last_ack) and ack_num != self.last_ack:
+        elif self.seq_compare(ack_num, self.last_ack) and ack_num != self.last_ack:
             is_new_ack = True
         
         if is_new_ack:
-            # Update base
+            # update base
             if self.state == 'SYN_SENT':
+                # for intitial connection move base forward after
+                # syn is acknowledged
                 if ack_num == self.next_seq:
                     self.state = 'ESTABLISHED'
                     self.base = self.next_seq
                     self.stop_timer()
                     self.dup_ack_count = 0
             elif self.state == 'ESTABLISHED':
-                # Remove acknowledged segments
+                # remove acknowledged segments
                 to_remove = []
                 for seq in list(self.unacked_segments.keys()):
                     segment, payload_len, _ = self.unacked_segments[seq]
                     seg_end = (seq + payload_len) % MAX_SEQ
                     
-                    # Check if segment is fully acknowledged
-                    # ACK num is the next expected byte, so if ack_num > seg_end, segment is acked
-                    if self._seq_compare(ack_num, seg_end):
+                    # check if segment is fully acknowledged
+                    # ack num is the next expected byte, so if ack_num > seg_end, segment is acked
+                    if self.seq_compare(ack_num, seg_end):
                         to_remove.append(seq)
                 
                 for seq in to_remove:
                     del self.unacked_segments[seq]
                 
-                # Update base
-                if self._seq_compare(ack_num, self.base):
+                # update base
+                if self.seq_compare(ack_num, self.base):
                     self.base = ack_num
                 
-                # Restart timer if there are unacked segments
+                # if there are unacked segments
                 if self.unacked_segments:
                     self.start_timer()
                 else:
@@ -433,7 +445,7 @@ class Sender:
                 self.dup_ack_count = 0
             elif self.state == 'FIN_WAIT':
                 if ack_num == self.next_seq:
-                    # FIN acknowledged
+                    # fin acknowledged
                     self.state = 'CLOSED'
                     self.stop_timer()
                     self.running = False
@@ -441,20 +453,20 @@ class Sender:
             
             self.last_ack = ack_num
     
-    def _get_window_size(self):
+    def get_window_size(self):
         """Calculate current window size"""
         if self.state != 'ESTABLISHED':
             return 0
         
-        # Calculate bytes in flight (unacknowledged data)
-        bytes_in_flight = 0
+        # calculate unacked data
+        unacked_data = 0
         for seq, (_, payload_len, _) in self.unacked_segments.items():
-            bytes_in_flight += payload_len
+            unacked_data += payload_len
         
-        available = self.max_win - bytes_in_flight
+        available = self.max_win - unacked_data
         return max(0, available)
     
-    def _read_file_data(self, num_bytes):
+    def read_file_data(self, num_bytes):
         """Read data from file"""
         if self.file_handle is None:
             self.file_handle = open(self.txt_file, 'rb')
@@ -462,7 +474,7 @@ class Sender:
         data = self.file_handle.read(num_bytes)
         return data
     
-    def _close_file(self):
+    def close_file(self):
         """Close file handle"""
         if self.file_handle:
             self.file_handle.close()
@@ -472,87 +484,92 @@ class Sender:
         """Main sender logic"""
         self.start_time = time.time()
         
-        # Start receive thread
-        self.receive_thread = threading.Thread(target=self._receive_thread, daemon=True)
+        # start receive thread
+        self.receive_thread = threading.Thread(target=self.receive_thread_func, daemon=True)
         self.receive_thread.start()
         
-        # Connection setup: Send SYN
+        # begin sending SYN by creating a segement in urp
+        # then send the segment through the socket
         syn_segment = URPSegment.create_segment(self.isn, SEG_SYN)
-        self._send_segment(syn_segment, SEG_SYN, self.isn, 0)
+        self.send_segment(syn_segment, SEG_SYN, self.isn, 0)
+
+        # start the timer to retransmit the segment if it is not acknowledged
         self.start_timer()
         
-        # Wait for connection establishment
+        # wait for connection establishment
         while self.state == 'SYN_SENT' and self.running:
             time.sleep(0.01)
         
         if not self.running:
             return
         
-        # Data transmission phase
+        # data transmission phase
         file_size = os.path.getsize(self.txt_file)
         
         while self.file_pos < file_size or self.unacked_segments:
-            # Send data while window allows
+            # send data while window allows
             while self.file_pos < file_size:
-                window_size = self._get_window_size()
+                window_size = self.get_window_size()
                 if window_size < MSS:
                     break
                 
-                # Read data
+                # read data
                 bytes_to_read = min(MSS, file_size - self.file_pos, window_size)
-                data = self._read_file_data(bytes_to_read)
+                data = self.read_file_data(bytes_to_read)
                 
                 if not data:
                     break
                 
-                # Create DATA segment
+                # create data segment
                 segment = URPSegment.create_segment(self.next_seq, SEG_DATA, data)
                 payload_len = len(data)
                 
-                # Store in unacked buffer
+                # store in unacked buffer
                 self.unacked_segments[self.next_seq] = (segment, payload_len, False)
                 
-                # Send segment
-                self._send_segment(segment, SEG_DATA, self.next_seq, payload_len)
+                # send segment
+                self.send_segment(segment, SEG_DATA, self.next_seq, payload_len)
                 
-                # Update sequence number and file position
+                # update sequence number and file position
                 self.file_pos += payload_len
                 self.next_seq = (self.next_seq + payload_len) % MAX_SEQ
                 
-                # Start timer if not running
+                # start timer if not running
                 if not self.timer_running:
                     self.start_timer()
             
-            # Wait a bit before checking again
+            # wait a bit before checking again
             time.sleep(0.01)
         
-        # Close file
-        self._close_file()
+        # close file
+        self.close_file()
         
-        # Wait for all data to be acknowledged
+        # wait for all data to be acknowledged
         while self.unacked_segments and self.running:
             time.sleep(0.01)
         
         if not self.running:
             return
         
-        # Connection teardown: Send FIN
+        # done sending data, send FIN
         self.state = 'CLOSING'
         fin_segment = URPSegment.create_segment(self.next_seq, SEG_FIN)
-        self._send_segment(fin_segment, SEG_FIN, self.next_seq, 0)
+        self.send_segment(fin_segment, SEG_FIN, self.next_seq, 0)
         self.unacked_segments[self.next_seq] = (fin_segment, 0, False)
         self.next_seq = (self.next_seq + 1) % MAX_SEQ
+
+        # start the timer to retransmit the FIN if it is not acknowledged
         self.state = 'FIN_WAIT'
         self.start_timer()
         
-        # Wait for FIN ACK
+        # wait for fin ack
         while self.state == 'FIN_WAIT' and self.running:
             time.sleep(0.01)
         
-        # Write statistics
-        self._write_statistics()
+        # write statistics
+        self.write_statistics()
     
-    def _write_statistics(self):
+    def write_statistics(self):
         """Write statistics to log file"""
         with open(self.log_file, 'a') as f:
             f.write(f"\nOriginal data sent: {self.original_data_sent}\n")
