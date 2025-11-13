@@ -141,11 +141,11 @@ class Receiver:
         self.duplicate_segments_received = 0
         self.total_acks_sent = 0
         self.duplicate_acks_sent = 0
+        self.last_ack_sent = None
         
         # track received sequence numbers for duplicates
         self.received_seqs = set()
         
-        print("starting receiver")
         self.running = True
     
     def log(self, direction, status, time_ms, seg_type, seq_num, payload_len):
@@ -161,7 +161,10 @@ class Receiver:
         
         time_ms = (time.time() - self.start_time) * 1000 if self.start_time else 0
         self.log('snd', 'ok', time_ms, 'ACK', ack_num, 0)
+        if self.last_ack_sent is not None and ack_num == self.last_ack_sent:
+            self.duplicate_acks_sent += 1
         self.total_acks_sent += 1
+        self.last_ack_sent = ack_num
     
     def write_in_order_data(self):
         """Write all in-order data from buffer to file"""
@@ -182,6 +185,7 @@ class Receiver:
             # first SYN received
             self.isn = seq_num
             self.expected_seq = (seq_num + 1) % MAX_SEQ
+            self.original_segments_received += 1
 
             # swap to ESTABLISHED state and send ack back.
             self.state = 'ESTABLISHED'
@@ -189,7 +193,6 @@ class Receiver:
         elif self.state == 'ESTABLISHED':
             # duplicate SYN
             self.send_ack(self.expected_seq)
-            self.duplicate_acks_sent += 1
     
     def handle_data(self, seq_num, data):
         """Handle DATA segment"""
@@ -228,8 +231,6 @@ class Receiver:
             if in_window:
                 self.total_data_received += payload_len
         
-        self.total_segments_received += 1
-        
         # check if in order
         if seq_num == self.expected_seq:
             # in order - write immediately (if not duplicate)
@@ -263,14 +264,11 @@ class Receiver:
         
         # send ack (cumulative)
         self.send_ack(self.expected_seq)
-        
-        # check if duplicate ack
-        if is_duplicate:
-            self.duplicate_acks_sent += 1
     
     def handle_fin(self, seq_num):
         """Handle FIN segment"""
         if self.state == 'ESTABLISHED':
+            self.original_segments_received += 1
             self.write_in_order_data()
             
             # close file
@@ -292,7 +290,6 @@ class Receiver:
             # duplicate fin - resend ack
             expected_after_fin = (seq_num + 1) % MAX_SEQ
             self.send_ack(expected_after_fin)
-            self.duplicate_acks_sent += 1
     
     def time_wait_timer(self):
         """Timer for TIME_WAIT state (2 * MSL)"""
@@ -334,6 +331,8 @@ class Receiver:
                 seq_num = header_info['seq_num']
                 seg_type = header_info['seg_type']
                 payload = data[HEADER_SIZE:]
+                
+                self.total_segments_received += 1
                 
                 # handle segment based on type
                 if seg_type == SEG_SYN:
