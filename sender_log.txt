@@ -1,6 +1,44 @@
-snd ok 0.00 SYN 17730 0
-rcv ok 0.00 ACK 17731 0
-snd ok 0.01 DATA 17731 1000
-snd ok 0.01 DATA 18731 1000
-snd ok 0.01 DATA 19731 1000
-snd ok 0.01 DATA 20731 500
+snd cor 0.14 SYN 40685 0
+snd ok 105.35 SYN 40685 0
+rcv ok 106.58 ACK 40686 0
+snd ok 110.15 DATA 40686 1000
+rcv cor 110.98 ACK 41686 0
+snd ok 211.06 DATA 40686 1000
+rcv ok 212.83 ACK 41686 0
+snd cor 213.18 DATA 41686 1000
+snd ok 316.71 DATA 41686 1000
+rcv ok 317.81 ACK 42686 0
+snd ok 320.38 DATA 42686 1000
+rcv cor 321.13 ACK 43686 0
+snd ok 421.88 DATA 42686 1000
+rcv cor 423.16 ACK 43686 0
+snd cor 527.87 DATA 42686 1000
+snd ok 632.58 DATA 42686 1000
+rcv cor 634.67 ACK 43686 0
+snd cor 737.22 DATA 42686 1000
+snd ok 838.97 DATA 42686 1000
+rcv cor 840.42 ACK 43686 0
+snd cor 944.56 DATA 42686 1000
+snd ok 1050.03 DATA 42686 1000
+rcv ok 1051.59 ACK 43686 0
+snd cor 1054.34 DATA 43686 500
+snd cor 1158.23 DATA 43686 500
+snd ok 1262.20 DATA 43686 500
+rcv cor 1263.19 ACK 44186 0
+snd ok 1367.63 DATA 43686 500
+rcv ok 1368.92 ACK 44186 0
+snd ok 1378.08 FIN 44186 0
+rcv ok 1379.39 ACK 44187 0
+
+Original data sent: 3500
+Total data sent: 14000
+Original segments sent: 6
+Total segments sent: 19
+Timeout retransmissions: 13
+Fast retransmissions: 0
+Duplicate acks received: 0
+Corrupted acks discarded: 6
+PLC forward segments dropped: 0
+PLC forward segments corrupted: 7
+PLC reverse segments dropped: 0
+PLC reverse segments corrupted: 6

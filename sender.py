@@ -124,10 +124,13 @@ class PLC:
     
     def process_outgoing(self, segment, seg_type, seq_num, payload_len, start_time):
         """Process outgoing segment (forward direction)"""
+        def timestamp_ms():
+            return ((time.time() - start_time) * 1000) if start_time else 0
+
         # check for drop
         if random.random() < self.flp:
             self.forward_dropped += 1
-            self.log('snd', 'drp', time.time() - start_time, seg_type, seq_num, payload_len)
+            self.log('snd', 'drp', timestamp_ms(), seg_type, seq_num, payload_len)
             return None
         
         # check for corruption
@@ -143,13 +146,15 @@ class PLC:
                 segment = segment[:byte_idx] + bytes([byte_val ^ (1 << bit_idx)]) + segment[byte_idx + 1:]
         
         status = 'cor' if corrupted else 'ok'
-        self.log('snd', status, time.time() - start_time, seg_type, seq_num, payload_len)
+        self.log('snd', status, timestamp_ms(), seg_type, seq_num, payload_len)
         
         # send possible corrupted segment
         return segment
     
     def process_incoming(self, segment, start_time):
         """Process incoming segment (reverse direction)"""
+        def timestamp_ms():
+            return ((time.time() - start_time) * 1000) if start_time else 0
         # parse header to get info for logging
         header_info = URPSegment.parse_header(segment)
         if header_info is None:
@@ -161,7 +166,7 @@ class PLC:
         # check for drop
         if random.random() < self.rlp:
             self.reverse_dropped += 1
-            self.log('rcv', 'drp', time.time() - start_time, seg_type_str, seq_num, 0)
+            self.log('rcv', 'drp', timestamp_ms(), seg_type_str, seq_num, 0)
             return None
         
         # check for corruption
@@ -177,7 +182,7 @@ class PLC:
                 segment = segment[:byte_idx] + bytes([byte_val ^ (1 << bit_idx)]) + segment[byte_idx + 1:]
         
         status = 'cor' if corrupted else 'ok'
-        self.log('rcv', status, time.time() - start_time, seg_type_str, seq_num, 0)
+        self.log('rcv', status, timestamp_ms(), seg_type_str, seq_num, 0)
         return segment
     
     def log(self, direction, status, time_ms, seg_type, seq_num, payload_len):
@@ -203,8 +208,9 @@ class Sender:
 
         self.max_win = int(max_win)
 
-        # in milliseconds
-        self.rto = int(rto)
+        # retransmission timeout in milliseconds (store ms and seconds)
+        self.rto_ms = int(rto)
+        self.rto_seconds = self.rto_ms / 1000.0
         
         # initialize plc
         self.log_file = 'sender_log.txt'
@@ -239,7 +245,8 @@ class Sender:
         self.file_pos = 0
         
         # buffers
-        self.unacked_segments = {}  # seq_num -> (segment, payload_len, is_retransmission)
+        self.unacked_segments = {}  # seq_num -> (segment, payload_len, send_order)
+        self.send_order_counter = 0
         self.file_data = None
         
         # timer
@@ -290,11 +297,14 @@ class Sender:
         """Timer thread function"""
         while self.running:
             if self.timer_running:
-                time.sleep(self.rto)
+                time.sleep(self.rto_seconds)
+                should_handle = False
                 with self.timer_lock:
                     if self.timer_running and self.running:
-                        # timeout occurred
-                        self.handle_timeout()
+                        should_handle = True
+                if should_handle:
+                    # timeout occurred
+                    self.handle_timeout()
             else:
                 time.sleep(0.01)
     
@@ -304,9 +314,11 @@ class Sender:
             self.stop_timer()
             return
         
-        # find oldest unacknowledged segment
-        oldest_seq = min(self.unacked_segments.keys())
-        segment, payload_len, _ = self.unacked_segments[oldest_seq]
+        # find oldest unacknowledged segment using send order
+        oldest_seq, (segment, payload_len, _) = min(
+            self.unacked_segments.items(),
+            key=lambda item: item[1][2]
+        )
         
         # retransmit
         seg_type = SEG_DATA
@@ -393,8 +405,10 @@ class Sender:
             # fast retransmit on 3 duplicate acks
             if self.dup_ack_count == 3 and self.state == 'ESTABLISHED':
                 if self.unacked_segments:
-                    oldest_seq = min(self.unacked_segments.keys())
-                    segment, payload_len, _ = self.unacked_segments[oldest_seq]
+                    oldest_seq, (segment, payload_len, _) = min(
+                        self.unacked_segments.items(),
+                        key=lambda item: item[1][2]
+                    )
                     self.send_segment(segment, SEG_DATA, oldest_seq, payload_len, is_retransmission=True)
                     self.fast_retransmissions += 1
                     self.dup_ack_count = 0
@@ -413,6 +427,7 @@ class Sender:
                 # for intitial connection move base forward after
                 # syn is acknowledged
                 if ack_num == self.next_seq:
+                    self.unacked_segments.pop(self.isn, None)
                     self.state = 'ESTABLISHED'
                     self.base = self.next_seq
                     self.stop_timer()
@@ -446,6 +461,8 @@ class Sender:
             elif self.state == 'FIN_WAIT':
                 if ack_num == self.next_seq:
                     # fin acknowledged
+                    fin_seq = (ack_num - 1) % MAX_SEQ
+                    self.unacked_segments.pop(fin_seq, None)
                     self.state = 'CLOSED'
                     self.stop_timer()
                     self.running = False
@@ -482,15 +499,18 @@ class Sender:
     
     def run(self):
         """Main sender logic"""
-        self.start_time = time.time()
+        if self.start_time is None:
+            self.start_time = time.time()
         
         # start receive thread
         self.receive_thread = threading.Thread(target=self.receive_thread_func, daemon=True)
         self.receive_thread.start()
         
         # begin sending SYN by creating a segement in urp
-        # then send the segment through the socket
+        # track in unacked map so it can be retransmitted on timeout
         syn_segment = URPSegment.create_segment(self.isn, SEG_SYN)
+        self.send_order_counter += 1
+        self.unacked_segments[self.isn] = (syn_segment, 0, self.send_order_counter)
         self.send_segment(syn_segment, SEG_SYN, self.isn, 0)
 
         # start the timer to retransmit the segment if it is not acknowledged
@@ -524,8 +544,9 @@ class Sender:
                 segment = URPSegment.create_segment(self.next_seq, SEG_DATA, data)
                 payload_len = len(data)
                 
-                # store in unacked buffer
-                self.unacked_segments[self.next_seq] = (segment, payload_len, False)
+                # store in unacked buffer with send order
+                self.send_order_counter += 1
+                self.unacked_segments[self.next_seq] = (segment, payload_len, self.send_order_counter)
                 
                 # send segment
                 self.send_segment(segment, SEG_DATA, self.next_seq, payload_len)
@@ -554,8 +575,9 @@ class Sender:
         # done sending data, send FIN
         self.state = 'CLOSING'
         fin_segment = URPSegment.create_segment(self.next_seq, SEG_FIN)
+        self.send_order_counter += 1
+        self.unacked_segments[self.next_seq] = (fin_segment, 0, self.send_order_counter)
         self.send_segment(fin_segment, SEG_FIN, self.next_seq, 0)
-        self.unacked_segments[self.next_seq] = (fin_segment, 0, False)
         self.next_seq = (self.next_seq + 1) % MAX_SEQ
 
         # start the timer to retransmit the FIN if it is not acknowledged
@@ -603,7 +625,6 @@ def main():
     
     sender = Sender(sender_port, receiver_port, txt_file, max_win, rto, flp, rlp, fcp, rcp)
     try:
-        print("starting sender")
         sender.run()
         sender.running = False
     except Exception as e:
