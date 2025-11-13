@@ -5,7 +5,6 @@ Receives data from URP Sender and writes to file.
 """
 
 import socket
-import struct
 import time
 import threading
 import sys
@@ -13,7 +12,7 @@ import sys
 # constants
 HEADER_SIZE = 6
 MAX_SEQ = 65536  # 2^16
-MSL = 1.0  # maximum segment lifetime in seconds
+MSL = 1.0
 
 # segment types
 SEG_DATA = 0
@@ -36,9 +35,11 @@ class URPSegment:
         elif seg_type == SEG_FIN:
             flags = 0b100
         
-        header = struct.pack('>HBBH', seq_num, 0, flags, checksum)
-        
-        return header
+        return (
+            seq_num.to_bytes(2, 'big') +
+            bytes([0, flags]) +
+            checksum.to_bytes(2, 'big')
+        )
     
     @staticmethod
     def parse_header(header):
@@ -47,16 +48,18 @@ class URPSegment:
             return None
         
         try:
-            seq_num, _, flags_byte, checksum = struct.unpack('>HBBH', header[:HEADER_SIZE])
-        except struct.error:
+            # first 2 bytes r sequence number, 3rd is flag, 4th n 5th for checksum
+            # get em from big endian conversion.
+            seq_num, flags_byte, checksum = int.from_bytes(header[0:2], 'big'), header[2], int.from_bytes(header[4:6], 'big')
+        except (ValueError, IndexError):
             return None
         
         seg_type = SEG_DATA
-        if flags_byte & 0b001:  # ack
+        if flags_byte & 0b001: 
             seg_type = SEG_ACK
-        elif flags_byte & 0b010:  # syn
+        elif flags_byte & 0b010: 
             seg_type = SEG_SYN
-        elif flags_byte & 0b100:  # fin
+        elif flags_byte & 0b100: 
             seg_type = SEG_FIN
         
         return {
@@ -87,8 +90,7 @@ class URPSegment:
         header = URPSegment.create_header(seq_num, seg_type, 0)
         segment = header + data
         checksum = URPSegment.calculate_checksum(segment)
-        segment = header[:4] + struct.pack('>H', checksum) + data
-        return segment
+        return URPSegment.create_header(seq_num, seg_type, checksum) + data
     
     @staticmethod
     def verify_checksum(segment):
@@ -96,7 +98,7 @@ class URPSegment:
         if len(segment) < HEADER_SIZE:
             return False
         calculated = URPSegment.calculate_checksum(segment)
-        received = struct.unpack('>H', segment[4:6])[0]
+        received = int.from_bytes(segment[4:6], 'big')
         return calculated == received
 
 

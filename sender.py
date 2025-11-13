@@ -6,7 +6,6 @@ packet loss/corruption emulation, and reliable file transfer.
 """
 
 import socket
-import struct
 import random
 import time
 import threading
@@ -42,8 +41,11 @@ class URPSegment:
             flags = 0b100  # fin bit
         # data has flags = 0
      
-        header = struct.pack('>HBBH', seq_num, 0, flags, checksum)
-        return header
+        return (
+            seq_num.to_bytes(2, 'big') +
+            bytes([0, flags]) +
+            checksum.to_bytes(2, 'big')
+        )
     
     @staticmethod
     def parse_header(header):
@@ -52,8 +54,8 @@ class URPSegment:
             return None
         
         try:
-            seq_num, _, flags_byte, checksum = struct.unpack('>HBBH', header[:HEADER_SIZE])
-        except struct.error:
+            seq_num, flags_byte, checksum = int.from_bytes(header[0:2], 'big'), header[2], int.from_bytes(header[4:6], 'big')
+        except (ValueError, IndexError):
             return None
         
         seg_type = SEG_DATA
@@ -92,9 +94,7 @@ class URPSegment:
         header = URPSegment.create_header(seq_num, seg_type, 0)
         segment = header + data
         checksum = URPSegment.calculate_checksum(segment)
-        # replace checksum in header
-        segment = header[:4] + struct.pack('>H', checksum) + data
-        return segment
+        return URPSegment.create_header(seq_num, seg_type, checksum) + data
     
     @staticmethod
     def verify_checksum(segment):
@@ -102,7 +102,7 @@ class URPSegment:
         if len(segment) < HEADER_SIZE:
             return False
         calculated = URPSegment.calculate_checksum(segment)
-        received = struct.unpack('>H', segment[4:6])[0]
+        received = int.from_bytes(segment[4:6], 'big')
         return calculated == received
 
 
