@@ -1,0 +1,23 @@
+rcv ok 0.00 SYN 22996 0
+snd ok 0.27 ACK 22997 0
+rcv ok 12.22 DATA 22997 1000
+snd ok 12.45 ACK 23997 0
+rcv ok 12.50 DATA 23997 1000
+snd ok 12.63 ACK 24997 0
+rcv ok 25.24 DATA 24997 1000
+snd ok 25.50 ACK 25997 0
+rcv ok 25.56 DATA 25997 1000
+snd ok 25.71 ACK 26997 0
+rcv ok 38.16 DATA 26997 1000
+snd ok 38.41 ACK 27997 0
+rcv ok 50.96 FIN 27997 0
+snd ok 51.19 ACK 27998 0
+
+Original data received: 5000
+Total data received: 5000
+Original segments received: 7
+Total segments received: 7
+Corrupted segments discarded: 0
+Duplicate segments received: 0
+Total acks sent: 7
+Duplicate acks sent: 0

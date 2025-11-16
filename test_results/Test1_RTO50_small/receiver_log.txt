@@ -1,0 +1,15 @@
+rcv ok 0.00 SYN 14909 0
+snd ok 0.21 ACK 14910 0
+rcv ok 11.84 DATA 14910 500
+snd ok 12.10 ACK 15410 0
+rcv ok 24.14 FIN 15410 0
+snd ok 24.37 ACK 15411 0
+
+Original data received: 500
+Total data received: 500
+Original segments received: 3
+Total segments received: 3
+Corrupted segments discarded: 0
+Duplicate segments received: 0
+Total acks sent: 3
+Duplicate acks sent: 0

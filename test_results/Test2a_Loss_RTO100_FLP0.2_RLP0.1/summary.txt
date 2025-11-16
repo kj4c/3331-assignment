@@ -1,0 +1,19 @@
+
+Test: Test2a_Loss_RTO100_FLP0.2_RLP0.1
+Parameters:
+  Receiver Port: 50020
+  Sender Port: 50021
+  Test File: medium.txt
+  Max Window: 1000
+  RTO: 100
+  Forward Loss: 0.2
+  Reverse Loss: 0.1
+  Forward Corruption: 0
+  Reverse Corruption: 0
+
+Results:
+  Sender Exit Code: 0
+  Receiver Exit Code: -15
+  Files Match: True
+  Original File Size: 2500
+  Received File Size: 2500

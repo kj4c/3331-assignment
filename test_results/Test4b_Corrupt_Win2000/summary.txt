@@ -1,0 +1,19 @@
+
+Test: Test4b_Corrupt_Win2000
+Parameters:
+  Receiver Port: 50042
+  Sender Port: 50043
+  Test File: large.txt
+  Max Window: 2000
+  RTO: 100
+  Forward Loss: 0
+  Reverse Loss: 0
+  Forward Corruption: 0.1
+  Reverse Corruption: 0.1
+
+Results:
+  Sender Exit Code: 0
+  Receiver Exit Code: -15
+  Files Match: True
+  Original File Size: 5000
+  Received File Size: 5000

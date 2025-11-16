@@ -1,0 +1,19 @@
+
+Test: Test1_RTO100_medium
+Parameters:
+  Receiver Port: 50008
+  Sender Port: 50009
+  Test File: medium.txt
+  Max Window: 1000
+  RTO: 100
+  Forward Loss: 0
+  Reverse Loss: 0
+  Forward Corruption: 0
+  Reverse Corruption: 0
+
+Results:
+  Sender Exit Code: 0
+  Receiver Exit Code: -15
+  Files Match: True
+  Original File Size: 2500
+  Received File Size: 2500

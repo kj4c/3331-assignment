@@ -1,0 +1,19 @@
+
+Test: Test2c_Both_RTO100
+Parameters:
+  Receiver Port: 50034
+  Sender Port: 50035
+  Test File: medium.txt
+  Max Window: 1000
+  RTO: 100
+  Forward Loss: 0.1
+  Reverse Loss: 0.1
+  Forward Corruption: 0.1
+  Reverse Corruption: 0.1
+
+Results:
+  Sender Exit Code: 0
+  Receiver Exit Code: 0
+  Files Match: True
+  Original File Size: 2500
+  Received File Size: 2500

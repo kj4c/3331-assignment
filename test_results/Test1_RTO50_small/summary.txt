@@ -1,0 +1,19 @@
+
+Test: Test1_RTO50_small
+Parameters:
+  Receiver Port: 50000
+  Sender Port: 50001
+  Test File: small.txt
+  Max Window: 1000
+  RTO: 50
+  Forward Loss: 0
+  Reverse Loss: 0
+  Forward Corruption: 0
+  Reverse Corruption: 0
+
+Results:
+  Sender Exit Code: 0
+  Receiver Exit Code: -15
+  Files Match: True
+  Original File Size: 500
+  Received File Size: 500

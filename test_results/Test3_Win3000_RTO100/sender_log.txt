@@ -1,0 +1,27 @@
+snd ok 0.11 SYN 33102 0
+rcv ok 0.63 ACK 33103 0
+snd ok 12.97 DATA 33103 1000
+snd ok 13.17 DATA 34103 1000
+snd ok 13.32 DATA 35103 1000
+rcv ok 13.45 ACK 34103 0
+rcv ok 13.69 ACK 35103 0
+rcv ok 13.84 ACK 36103 0
+snd ok 26.04 DATA 36103 1000
+snd ok 26.26 DATA 37103 1000
+rcv ok 26.40 ACK 37103 0
+rcv ok 26.63 ACK 38103 0
+snd ok 38.92 FIN 38103 0
+rcv ok 39.32 ACK 38104 0
+
+Original data sent: 5000
+Total data sent: 5000
+Original segments sent: 7
+Total segments sent: 7
+Timeout retransmissions: 0
+Fast retransmissions: 0
+Duplicate acks received: 0
+Corrupted acks discarded: 0
+PLC forward segments dropped: 0
+PLC forward segments corrupted: 0
+PLC reverse segments dropped: 0
+PLC reverse segments corrupted: 0

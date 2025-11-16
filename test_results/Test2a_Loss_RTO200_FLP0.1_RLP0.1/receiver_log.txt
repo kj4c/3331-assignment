@@ -1,0 +1,21 @@
+rcv ok 0.00 SYN 17519 0
+snd ok 0.24 ACK 17520 0
+rcv ok 12.76 DATA 17520 1000
+snd ok 13.06 ACK 18520 0
+rcv ok 25.49 DATA 18520 1000
+snd ok 25.64 ACK 19520 0
+rcv ok 38.28 DATA 19520 500
+snd ok 38.44 ACK 20020 0
+rcv ok 205.63 DATA 19520 500
+snd ok 206.05 ACK 20020 0
+rcv ok 411.37 FIN 20020 0
+snd ok 411.93 ACK 20021 0
+
+Original data received: 2500
+Total data received: 2500
+Original segments received: 5
+Total segments received: 6
+Corrupted segments discarded: 0
+Duplicate segments received: 1
+Total acks sent: 6
+Duplicate acks sent: 1

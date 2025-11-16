@@ -1,0 +1,19 @@
+
+Test: Test2b_Corrupt_RTO200_FCP0.1_RCP0.1
+Parameters:
+  Receiver Port: 50030
+  Sender Port: 50031
+  Test File: medium.txt
+  Max Window: 1000
+  RTO: 200
+  Forward Loss: 0
+  Reverse Loss: 0
+  Forward Corruption: 0.1
+  Reverse Corruption: 0.1
+
+Results:
+  Sender Exit Code: 0
+  Receiver Exit Code: 0
+  Files Match: True
+  Original File Size: 2500
+  Received File Size: 2500
